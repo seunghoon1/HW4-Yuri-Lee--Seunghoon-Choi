@@ -1,0 +1,524 @@
+---
+title: "PS4"
+author: "Yuri Lee, Seunghoon Choi"
+date: '2021 5 6 '
+output: pdf_document
+---
+
+# 1. Clustering and PCA
+
+```{r, include=FALSE}
+
+library(ggplot2)
+library(LICORS)  
+library(foreach)
+library(mosaic)
+library(cluster)
+library(factoextra)
+library(tidyverse)
+```
+
+
+## (1) Data checking
+### In order to analyze 'color' of wine, data mutation: 'color' of white=0, red=1
+```{r, echo=FALSE}
+
+wine = read.csv('C:/users/CHOI/Desktop/wine.csv')
+wine_m = wine %>%
+   mutate(color = ifelse(color=="red", 1, 0))
+```
+### Selecting variables: high correlation
+### quality: volatile.acidity, chlorides, density, alcohol
+### color: all variables except for citric.acid
+### So, we will omit 'citric.acid', and use 10 variables
+```{r, echo=FALSE}
+X = wine_m[,-(12:13)]
+cor(wine_m$quality, X)
+cor(wine_m$color, X)
+
+wine_x = X %>%
+   select(-citric.acid)
+```
+
+
+
+
+## (2) Using K-means, K-means++
+
+### Run k-means with 3 clusters and 25 starts
+```{r, echo=FALSE}
+wine_x = scale(wine_x, center=TRUE, scale=TRUE)
+
+clust1 = kmeans(wine_x, 3, nstart=25)
+```
+
+### Using kmeans++ initialization
+```{r, echo=FALSE}
+
+clust2 = kmeanspp(wine_x, k=3, nstart=25)
+```
+
+### Compare the results
+#### Within-cluster of K-means
+```{r, echo=FALSE}
+clust1$tot.withinss
+```
+#### Within-cluster of K-means++
+```{r, echo=FALSE}
+clust2$tot.withinss
+```
+#### Between-cluster of K-means
+```{r, echo=FALSE}
+clust1$betweenss
+```
+#### Between-cluster of K-means++
+```{r, echo=FALSE}
+clust2$betweenss
+```
+
+### predicted engagement: R-squared too low
+```{r, echo=FALSE, message=FALSE}
+
+wine_k = wine_m %>%
+   mutate(z=clust2$cluster)
+
+lm_kq = lm(quality ~ z, data=wine_k)
+summary(lm_kq)
+
+lm_kc = lm(color ~ z, data=wine_k)
+summary(lm_kc)
+```
+
+## (3) using PCA
+```{r, echo=FALSE}
+
+pcX = prcomp(wine_x, scale=TRUE)
+loadings = pcX$rotation
+scores = pcX$x
+```
+### Elbow point = 4
+```{r, fig.asp = 0.4, echo=FALSE}
+
+plot(pcX, type = "l")
+summary(pcX)
+```
+### Better results: R-squared higher
+### Especially, predicting 'color' of wine much higher
+```{r, echo=FALSE, message=FALSE}
+
+wine_p = wine_m %>%
+   mutate(pc=pcX$x[,1:4])
+
+lm_pq = lm(quality ~ pc, data=wine_p)
+summary(lm_pq)
+
+lm_pc = lm(color ~ pc, data=wine_p)
+summary(lm_pc)
+```
+### most of wines have levels between 5 and 7
+### So, the result of PCA is higher than that of Clustering
+### And because of these traits, Predicting quality is more difficult
+```{r, echo=FALSE}
+
+table(wine$color, wine$quality)
+```
+## (4) Appendix: Using Gap Statistics: K=3
+```{r, echo=FALSE, fig.asp = 0.4, warning=FALSE}
+
+wine_gap = clusGap(wine_x, FUN = kmeans, nstart = 25, K.max = 10, B = 10)
+plot(wine_gap, cex.main=0.7, cex.axis=0.7, cex.lab=0.7, las=1)
+```
+
+
+
+
+# 2. Market segmentation
+```{r, include=FALSE}
+
+library(ggplot2)
+library(tidyverse)
+library(corrplot)
+library(dplyr)
+
+SMarketing = read.csv('C:/users/CHOI/Desktop/social_marketing.csv', row.names=1)
+head(SMarketing)
+```
+## (1) Overview
+#### We analyzed 325,802 tweets from the target company's followers over a seven days in order to find understand its target customers better.
+#### After extracting meaningless or inappropriate tweet categories(chatter, uncategorized, spam and adult), we explored which categories of tweets are most attractive to target customers.
+#### In addition, we searched for relations among categories to look at more clearly which interests can be related to each other through hierarchical clustering.
+
+
+## (2) Analysis
+
+### (2-1) Delete meaningless or uninterpretable categories
+#### We deleted chatter, uncategorized, spam and adult
+```{r, echo=FALSE}
+
+SMarketing2 = SMarketing[,-c(1,5,35,36)]
+```
+### (2-2) Calculate each tweet keyword's proportion of every individual
+```{r, echo=FALSE}
+
+SMarketing3 = SMarketing2 / rowSums(SMarketing2)
+SMarketing3 = round(SMarketing3, digit=3)
+```
+### (2-3) Find the most powerful interests of the potential customers
+
+### (2-4) Searching for each person's most interested category
+```{r, include=FALSE}
+
+DF <- data.frame(SMarketing3)
+dominant = colnames(DF)[max.col(DF, ties.method = "first")]
+dominant
+```
+### (2-5) Frequencies of each category
+```{r, echo=FALSE}
+
+count <- table(unlist(dominant))
+count
+```
+#### This table showed us that most attractive tweet category was 1.photo-sharing(1,296 people), 2. health-nutrition(1,289), 3. cooking(612), 4. politics(556), 5. currenet events(533).
+
+### (2-6) Analyzing correlations between categories
+```{r, echo=FALSE}
+ggcorrplot::ggcorrplot(cor(SMarketing3), hc.order = TRUE)
+```
+
+#### The correlation plot shows there are close correlation among some categories.
+#### We could see most wide correlation among the categories parenting, religion, sports_fandom, food, school and family.
+#### Secondly, personal fitness, health nutrition, and outdoors have high correlation.
+#### News, politics and automotive also represent high correlation.
+
+### Analyzing with PCA
+```{r, fig.asp = 0.5, echo=FALSE, message=FALSE}
+
+PCA_SM = prcomp(SMarketing3, scale=TRUE)
+plot(PCA_SM)
+summary(PCA_SM)
+
+loadings_summary = PCA_SM$rotation %>%
+  as.data.frame() %>%
+  rownames_to_column('Tweet')
+
+loadings_summary %>%
+  select(Tweet, PC1) %>%
+  arrange(desc(PC1))
+
+loadings_summary %>%
+  select(Tweet, PC2) %>%
+  arrange(desc(PC2))
+```
+#### Top five categories of PC1 were religion, sports_fandom, parenting, food, school, and top five categories of PC2 were politics, travel, news, college_uni and automotive.
+#### This result closely coincides with that of the hierarchical correlation plot.
+
+## (3) Suggestion
+#### When we synthesized all analytic results, especially the correlation plot and categorical frequency table, what we would like to suggest to you about your potential customers' top-five interest categories are as below.
+#### 1. photo sharing(1,296), shopping(235), total(1,531)
+#### 2. health nutrition(1,289), personal fitness(110), outdoor(7), total(1,406)
+#### 3. sports fandom(484), food(196), parenting(73), religion(158), family(52), school(18), total(981)
+#### 4. politics(556), news(281), automotive(55), total(892)
+#### 5. cooking(612), fashion(56), beauty(18), total(686)
+#### If you plan advertise focusing on those categories, I convince, it will work out to your target customers. 
+
+
+
+
+# 3. Association rules for grocery purchases
+```{r, include=FALSE}
+
+library(igraph) 
+library(arules) 
+library(arulesViz)
+library(foreach) 
+library(tidyverse)
+library(igraph)
+
+groceries_raw = readLines('C:/users/CHOI/Desktop/groceries.txt')
+
+groceries = strsplit(groceries_raw, ",")
+```
+
+## (1) Data Clearing
+### Remove duplicates ("de-dupe")
+```{r, include=FALSE}
+
+groceries = lapply(groceries, unique)
+```
+### Cast this resulting list as a special arules "transactions" class
+```{r, echo=FALSE, message=FALSE}
+
+
+groceries_trans = as(groceries, "transactions") 
+
+summary(groceries_trans)
+```
+### Plot top 20 of list
+```{r, echo=FALSE}
+
+itemFrequencyPlot(groceries_trans, topN=20)
+```
+
+
+## (2) Analysis
+
+### Now run the 'apriori' algorithm(support=.005, confidence=.1, maxlen=2)
+```{r, include=FALSE}
+
+groceries_rules= apriori(groceries_trans,
+               parameter=list(support=.005, confidence=.1, maxlen=2))
+```
+### Check the output and plot all the rules
+```{r, include=FALSE}
+inspect(groceries_rules)
+```
+
+```{r, fig.asp = 0.6, echo=FALSE, warning=FALSE}
+plot(groceries_rules)
+```
+
+### can swap the axes and color scales
+### Pick the thresholds for lift and confidence: lift > 2, confidence > 0.2
+
+```{r, fig.asp = 0.6, echo=FALSE, waning=FALSE}
+plot(groceries_rules, measure = c("support", "lift"), shading = "confidence")
+```
+
+### can now look at subsets driven by the plot
+
+```{r, echo=FALSE, message=FALSE}
+inspect(subset(groceries_rules, lift > 2 & confidence > 0.2))
+```
+
+### graph-based visualization
+```{r, echo=FALSE}
+
+sub1 = subset(groceries_rules, subset=lift > 2 & confidence > 0.2)
+plot(sub1, method='graph')
+
+plot(head(sub1, 20, by='lift'), method='graph')
+```
+
+
+## (3) Conclusion
+### interesting rules here: {herbs} => {root vegetables}, {sliced cheese} => {sausage}, 
+### {berries} => {whipped/sour cream}, {beef} => {root vegetables} and so on
+
+
+
+
+
+
+
+
+
+
+
+
+
+# 4. Author attribution
+
+```{r, include=FALSE}
+
+library(tidyverse)
+library(tm)
+library(gamlr)
+library(SnowballC)
+library(nnet)
+library(stringi)
+```
+
+## (1) Importing data files in ReutersC50 folder
+### Initially we browsed one of the reader functions in tm library, and imported 2,500 text files from the ReutersC50 file.
+### After making the labels name concise, we created a text mining corpus with training data set.
+### By the pre-processing(tokenixation), we got rid of capital letters, numbers, punctuation, excess white-space, and stop words. In addition, sparse terms which have count 0 in more than 95% of documents also were removed. Then, we created a doc-term-matrix for a training set.
+### Next, we stepped the same pre-process for the test set. Especially, test-set vocabulary was restricted to the terms in DTM_train to enhance the prediction's accuracy.
+
+```{r, echo=FALSE}
+
+readerPlain = function(fname){
+  readerPlain(elem=list(content=readLines(fname)),
+              id=fname, langugae='en')}
+
+train_dirs = Sys.glob('C:/users/CHOI/Desktop/ReutersC50/C50train/*')
+train_dirs = train_dirs[c(1:50)]
+file_list = NULL
+labels_train = NULL
+for(author in train_dirs) {
+  author_name = substring(author, first=43)
+  files_to_add = Sys.glob(paste0(author, '/*.txt'))
+  file_list = append(file_list, files_to_add)
+  labels_train = append(labels_train, rep(author_name, length(files_to_add)))
+}
+
+corpus_train = Corpus(DirSource(train_dirs))  
+corpus_train = corpus_train %>% tm_map(., content_transformer(tolower)) %>% 
+  tm_map(., content_transformer(removeNumbers)) %>% 
+  tm_map(., content_transformer(removePunctuation)) %>%
+  tm_map(., content_transformer(stripWhitespace)) %>%
+  tm_map(., content_transformer(removeWords), stopwords("SMART"))
+
+corpus_train
+
+```
+
+
+## (2-1) Set operations with testing set
+```{r, echo=FALSE}
+
+test_dirs = Sys.glob('C:/users/CHOI/Desktop/ReutersC50/C50test/*')
+test_dirs = test_dirs[c(1:50)]
+file_list = NULL
+labels_test = NULL
+for(author in test_dirs) {
+  author_name = substring(author, first=41)
+  files_to_add = Sys.glob(paste0(author, '/*.txt'))
+  file_list = append(file_list, files_to_add)
+  labels_test = append(labels_test, rep(author_name, length(files_to_add)))
+}
+
+corpus_test = Corpus(DirSource(test_dirs)) 
+
+corpus_test = corpus_test %>% tm_map(., content_transformer(tolower)) %>% 
+  tm_map(., content_transformer(removeNumbers)) %>% 
+  tm_map(., content_transformer(removePunctuation)) %>%
+  tm_map(., content_transformer(stripWhitespace)) %>%
+  tm_map(., content_transformer(removeWords), stopwords("SMART")) 
+
+corpus_test
+
+```
+
+## (2-2) Create training and testing feature matrices and restrict test-set vocabulary to the terms in DTM_train
+
+```{r, echo=FALSE}
+
+DTM_train = DocumentTermMatrix(corpus_train)
+DTM_train # some basic summary statistics
+DTM_train = removeSparseTerms(DTM_train, 0.95)
+DTM_train.df<-as.data.frame(as.matrix(DTM_train))
+
+head(DTM_train)
+ 
+DTM_test = DocumentTermMatrix(corpus_test,
+                              control = list(dictionary=Terms(DTM_train)))
+DTM_test.df<-as.data.frame(as.matrix(DTM_test))
+
+head(DTM_test)
+
+```
+
+## (3) Fit prediction model
+### Before fitting prediction models, we set the outcome vector for all authors. We could represents all the authors as the number 1 to 50 through this process.
+
+## (3-1) Outcome vector for 50 authors
+
+
+```{r}
+
+y_train = 0 + {labels_train=='AaronPressman'} + 2*{labels_train=='AlanCrosby'} + 3*{labels_train=='AlexanderSmith'} + 
+  4*{labels_train=='BenjaminKangLim'} + 5*{labels_train=='BernardHickey'} + 6*{labels_train=='BradDorfman'} +
+  7*{labels_train=='DarrenSchuettler'} + 8*{labels_train=='DavidLawder'} + 9*{labels_train=='EdnaFernandes'} +
+  10*{labels_train=='EricAuchard'} + 11*{labels_train=='FumikoFujisaki'} + 12*{labels_train=='GrahamEarnshaw'} +
+  13*{labels_train=='HeatherScoffield'} + 14*{labels_train=='JaneMacartney'} + 15*{labels_train=='JanLopatka'} +
+  16*{labels_train=='JimGilchrist'} + 17*{labels_train=='JoeOrtiz'} + 18*{labels_train=='JohnMastrini'} +
+  19*{labels_train=='JonathanBirt'} + 20*{labels_train=='JoWinterbottom'} + 21*{labels_train=='KarlPenhaul'} +
+  22*{labels_train=='KeithWeir'} + 23*{labels_train=='KevinDrawbaugh'} + 24*{labels_train=='KevinMorrison'} +
+  25*{labels_train=='KristinRidley'} + 26*{labels_train=='KouroshKarimkhany'} + 27*{labels_train=='LydiaZajc'} + 
+  28*{labels_train=='LynneODonell'} + 29*{labels_train=='LynnleyBrowning'} + 30*{labels_train=='MarcelMichelson'} +
+  31*{labels_train=='MarkBendeich'} + 32*{labels_train=='MartinWolk'} + 33*{labels_train=='MattewBunce'} +
+  34*{labels_train=='MichaelConnor'} + 35*{labels_train=='MureDickie'} + 36*{labels_train=='NickLouth'} + 
+  37*{labels_train=='PatriciaCommins'} + 38*{labels_train=='PeterHumphrey'} + 39*{labels_train=='PierreTran'} +
+  40*{labels_train=='RobinSidel'} + 41*{labels_train=='RogerFillion'} + 42*{labels_train=='SamunelPerry'} +
+  43*{labels_train=='SarahDavison'} + 44*{labels_train=='ScottHillis'} + 45*{labels_train=='SimonCowell'} +
+  46*{labels_train=='TanEeLyn'} + 47*{labels_train=='TheresePoletti'} + 48*{labels_train=='TimFarrand'} +
+  49*{labels_train=='ToddNissen'} + 50*{labels_train=='WilliamKazer'}
+
+y_test = 0 + {labels_test=='AaronPressman'} + 2*{labels_test=='AlanCrosby'} + 3*{labels_test=='AlexanderSmith'} +
+  4*{labels_test=='BenjaminKangLim'} + 5*{labels_test=='BernardHickey'} + 6*{labels_test=='BradDorfman'} +
+  7*{labels_test=='DarrenSchuettler'} + 8*{labels_test=='DavidLawder'} + 9*{labels_test=='EdnaFernandes'} +
+  10*{labels_test=='EricAuchard'} + 11*{labels_test=='FumikoFujisaki'} + 12*{labels_test=='GrahamEarnshaw'} +
+  13*{labels_test=='HeatherScoffield'} + 14*{labels_test=='JaneMacartney'} + 15*{labels_test=='JanLopatka'} +
+  16*{labels_test=='JimGilchrist'} + 17*{labels_test=='JoeOrtiz'} + 18*{labels_test=='JohnMastrini'} +
+  19*{labels_test=='JonathanBirt'} + 20*{labels_test=='JoWinterbottom'} + 21*{labels_test=='KarlPenhaul'} +
+  22*{labels_test=='KeithWeir'} + 23*{labels_test=='KevinDrawbaugh'} + 24*{labels_test=='KevinMorrison'} +
+  25*{labels_test=='KristinRidley'} + 26*{labels_test=='KouroshKarimkhany'} + 27*{labels_test=='LydiaZajc'} + 
+  28*{labels_test=='LynneODonell'} + 29*{labels_test=='LynnleyBrowning'} + 30*{labels_test=='MarcelMichelson'} +
+  31*{labels_test=='MarkBendeich'} + 32*{labels_test=='MartinWolk'} + 33*{labels_test=='MattewBunce'} +
+  34*{labels_test=='MichaelConnor'} + 35*{labels_test=='MureDickie'} + 36*{labels_test=='NickLouth'} + 
+  37*{labels_test=='PatriciaCommins'} + 38*{labels_test=='PeterHumphrey'} + 39*{labels_test=='PierreTran'} +
+  40*{labels_test=='RobinSidel'} + 41*{labels_test=='RogerFillion'} + 42*{labels_test=='SamunelPerry'} +
+  43*{labels_test=='SarahDavison'} + 44*{labels_test=='ScottHillis'} + 45*{labels_test=='SimonCowell'} +
+  46*{labels_test=='TanEeLyn'} + 47*{labels_test=='TheresePoletti'} + 48*{labels_test=='TimFarrand'} +
+  49*{labels_test=='ToddNissen'} + 50*{labels_test=='WilliamKazer'}
+```
+
+```{r, include=FALSE}
+
+y_train
+y_test
+```
+
+## (3-2) Lasso logistic regression for document classification
+### Next, we fitted logit prediction models. The first model(logit1) had the default condition and the second one(logit2) had gaussian. 
+### We predicted each authors of every documents with these two models.
+
+```{r, include=FALSE}
+
+
+logit1 = cv.gamlr(DTM_train, y_train, nfold=10)
+yhat_test1 = predict(logit1, DTM_test, type='response')
+yhat_test1
+
+logit2 = cv.gamlr(DTM_train, y_train, family='gaussian', nfold=10)
+yhat_test2 = predict(logit2, DTM_test, type='response')
+yhat_test2
+
+yhat_test_final1 = round(yhat_test1, digits=0)
+yhat_test_final2 = round(yhat_test2, digits=0)
+yhat_test_final1
+yhat_test_final2
+```
+
+
+### y_test has a form of "list", while yhat-test_final1 has vector, so we converted form of y_test from list to matrix form to compare the prediction results and original authors.
+
+### Convert form of y_test list-> df->matrix
+
+```{r, include=FALSE}
+
+df_y_test <- data.frame(matrix(unlist(y_test), ncol = max(lengths(y_test)), byrow = TRUE))
+df_y_test
+mt_y_test <- as.matrix(df_y_test)
+
+```
+
+### convert form of yhat_test from vector to matrix
+
+```{r, include=FALSE}
+
+mt_yhat_test_final1 = as.matrix(yhat_test_final1)
+mt_yhat_test_final2 = as.matrix(yhat_test_final2)
+```
+
+
+## (3-3) Comparison of test set and prediction
+### The two models' accuracy from the confusion matrix were around 2.12%.
+
+### logit1
+
+```{r, include=FALSE}
+
+xtabs(~mt_yhat_test_final1 + mt_y_test)
+confusion_1 = table(y=mt_y_test, yhat=mt_yhat_test_final1)
+sum(diag(confusion_1)/sum(confusion_1))
+```
+
+### logit2
+
+```{r, include=FALSE}
+
+xtabs(~mt_yhat_test_final2 + mt_y_test)
+confusion_2 = table(y=mt_y_test, yhat=mt_yhat_test_final2)
+sum(diag(confusion_2)/sum(confusion_2))
+```
